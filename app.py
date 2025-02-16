@@ -2,7 +2,7 @@ from flask import Flask, request, render_template
 import pandas as pd
 import joblib
 
-app = Flask(__name__)
+app = Flask(__name__, template_folder='templates')
 
 # Load your model and encoders
 rf_model = joblib.load('rf_model.pkl')
@@ -19,6 +19,7 @@ def adaptive_iam_decision(new_event_df):
 @app.route('/', methods=['GET', 'POST'])
 def index():
     decision = None
+
     if request.method == 'POST':
         # Get form data
         timestamp_str = request.form.get('timestamp')
