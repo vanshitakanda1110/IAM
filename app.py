@@ -1,9 +1,8 @@
-from flask import Flask, request, render_template
-import pandas as pd
+from flask import Flask, render_template, request  # Added 'request' import
 import joblib
+import pandas as pd
 
-# Ensure Flask knows where the templates folder is
-app = Flask(__name__, template_folder="templates")
+app = Flask(__name__)
 
 # Load models
 rf_model = joblib.load("rf_model.pkl")
@@ -19,16 +18,19 @@ def index():
             timestamp_str = request.form.get("timestamp")
             device_str = request.form.get("device")
             risk_score = float(request.form.get("risk_score"))
-            
+
+            # Convert timestamp to numerical format
             timestamp = pd.to_datetime(timestamp_str).timestamp()
             device_val = device_encoder.transform([device_str])[0]
-            
+
+            # Create dataframe for prediction
             new_event = pd.DataFrame({
                 "Timestamp": [timestamp],
                 "Device": [device_val],
                 "Risk Score": [risk_score]
             })
 
+            # Predict decision
             decision = decision_encoder.inverse_transform(rf_model.predict(new_event))[0]
 
         except Exception as e:
