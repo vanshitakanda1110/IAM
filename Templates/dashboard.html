@@ -1,0 +1,6 @@
+<h1>Welcome, {{ username }} ({{ role }})</h1>
+<ul>
+    {% for level in access_levels %}
+        <li>Access to Level {{ level }} Files</li>
+    {% endfor %}
+</ul>

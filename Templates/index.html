@@ -1,33 +1,26 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
     <meta charset="utf-8">
-    <title>Adaptive IAM Demo</title>
-    <style>
-        body { font-family: Arial, sans-serif; margin: 2em; }
-        form { max-width: 400px; }
-        input[type="text"], input[type="number"] { width: 100%; padding: 8px; margin: 6px 0; }
-        input[type="submit"] { padding: 10px 20px; }
-    </style>
+    <title>Dashboard - Adaptive IAM</title>
 </head>
 <body>
-    <h1>Adaptive IAM System Demo</h1>
+    <h1>Dashboard</h1>
+    <p>Welcome, {{ session['username'] }}! <a href="{{ url_for('logout') }}">Logout</a></p>
+
     <form method="post">
-        <label for="timestamp">Timestamp (YYYY-MM-DD HH:MM:SS):</label><br>
-        <input type="text" id="timestamp" name="timestamp" value="2025-01-01 12:00:00"><br><br>
-        
         <label for="device">Device (e.g., Mobile, Laptop):</label><br>
-        <input type="text" id="device" name="device" value="Mobile"><br><br>
-        
-        <label for="failures">Recent Failures (number):</label><br>
-        <input type="number" id="failures" name="failures" value="0"><br><br>
-        
-        <input type="submit" value="Submit">
+        <input type="text" id="device" name="device" value="Mobile" required><br><br>
+
+        <label for="location">Location (e.g., New York, London):</label><br>
+        <input type="text" id="location" name="location" value="New York" required><br><br>
+
+        <input type="submit" value="Login">
     </form>
-    <br>
-    {% if risk and decision %}
-        <h2>Predicted Risk Score: {{ risk }}</h2>
-        <h2>Adaptive IAM Decision: {{ decision }}</h2>
+
+    {% if risk_score %}
+        <h2>Calculated Risk Score: {{ risk_score }}</h2>
+        <h2>Decision: {{ decision }}</h2>
     {% endif %}
 </body>
 </html>
