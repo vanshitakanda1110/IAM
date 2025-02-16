@@ -2,7 +2,10 @@ from flask import Flask, render_template, request  # Added 'request' import
 import joblib
 import pandas as pd
 
-app = Flask(__name__, template_folder="templates")
+template_path = os.path.join(os.getcwd(), "templates")
+print("Template path:", template_path)
+
+app = Flask(__name__, template_folder=template_path)
 
 # Load models
 rf_model = joblib.load("rf_model.pkl")
