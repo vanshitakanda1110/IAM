@@ -1,37 +1,26 @@
 import os
-from flask import Flask, render_template, request, redirect, url_for, session
+from flask import Flask, render_template, request, redirect, url_for, session, jsonify
 import pandas as pd
 import joblib
-import random  # For simulated login attempts
+import subprocess
+from datetime import datetime
+from employees_db import employees, file_access
 
 app = Flask(__name__, template_folder="templates")
 app.secret_key = "your_secret_key"
 
-# Load ML Models
+# Load AI Models
 rf_model = joblib.load("models/rf_model.pkl")
 device_encoder = joblib.load("models/device_encoder.pkl")
 decision_encoder = joblib.load("models/decision_encoder.pkl")
 
-# Employee Roles & Access Levels
-employee_roles = {
-    "alice": {"password": "password123", "role": "Customer Service", "access_level": [1, 2]},
-    "bob": {"password": "securepass", "role": "Loan Officer", "access_level": [1, 2, 3]},
-    "charlie": {"password": "accountpass", "role": "Accountant", "access_level": [1, 3]},
-    "dave": {"password": "financepass", "role": "Financial Analyst", "access_level": [1, 3, 4]},
-    "eve": {"password": "managerpass", "role": "Senior Manager", "access_level": [1, 2, 3, 4]},
-    "frank": {"password": "executivepass", "role": "Executive", "access_level": [1, 2, 3, 4, 5]},
-}
+# Log File Path
+LOG_FILE_PATH = "IAM_logs/logs.csv"
 
-# Simulated user behavior database
-user_behavior = {
-    "alice": {"device": "Laptop", "location": "New York"},
-    "bob": {"device": "Mobile", "location": "San Francisco"},
-}
-
-# Function to Calculate Risk Score
+# AI Risk Calculation Function
 def calculate_risk(username, new_device, new_location):
-    last_behavior = user_behavior.get(username, {"device": "Laptop", "location": "New York"})
-    risk_score = 0.1  # Base risk score
+    last_behavior = employees.get(username, {"device": "Laptop", "location": "New York"})
+    risk_score = 0.1  # Base risk
 
     if new_device != last_behavior["device"]:
         risk_score += 0.4
@@ -40,6 +29,34 @@ def calculate_risk(username, new_device, new_location):
 
     return min(1, risk_score)
 
+# Logging Function
+def log_activity(username, event_type, details):
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    log_entry = [timestamp, username, event_type, details]
+
+    # Ensure logs.csv exists
+    os.makedirs("IAM_logs", exist_ok=True)
+    if not os.path.exists(LOG_FILE_PATH):
+        with open(LOG_FILE_PATH, "w", newline="") as f:
+            writer = csv.writer(f)
+            writer.writerow(["Timestamp", "Username", "Event Type", "Details"])
+
+    # Append new log entry
+    with open(LOG_FILE_PATH, "a", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow(log_entry)
+
+    push_logs_to_github()
+
+# Function to Push Logs to GitHub
+def push_logs_to_github():
+    try:
+        subprocess.run(["git", "add", LOG_FILE_PATH], check=True)
+        subprocess.run(["git", "commit", "-m", "Updated logs"], check=True)
+        subprocess.run(["git", "push", "origin", "main"], check=True)
+    except Exception as e:
+        print("Git push failed:", str(e))
+
 @app.route("/login", methods=["GET", "POST"])
 def login():
     error = None
@@ -47,11 +64,13 @@ def login():
         username = request.form.get("username")
         password = request.form.get("password")
 
-        if username in employee_roles and employee_roles[username]["password"] == password:
+        if username in employees and employees[username]["password"] == password:
             session["username"] = username
+            log_activity(username, "Login", "Successful login")
             return redirect(url_for("dashboard"))
         else:
             error = "Invalid Credentials. Please try again."
+            log_activity(username, "Login", "Failed login attempt")
 
     return render_template("login.html", error=error)
 
@@ -61,42 +80,17 @@ def dashboard():
         return redirect(url_for("login"))
 
     username = session["username"]
-    user_role = employee_roles[username]["role"]
-    access_levels = employee_roles[username]["access_level"]
-    decision = None
-    risk_score = None
+    user_role = employees[username]["role"]
+    access_levels = employees[username]["access_level"]
+    allowed_files = [file_access[level] for level in access_levels]
 
-    if request.method == "POST":
-        new_device = request.form.get("device")
-        new_location = request.form.get("location")
+    return render_template("dashboard.html", username=username, role=user_role, allowed_files=allowed_files)
 
-        risk_score = calculate_risk(username, new_device, new_location)
-
-        if risk_score <= 0.5:
-            decision = "Access Granted"
-        elif 0.5 < risk_score <= 0.8:
-            session["mfa_required"] = True
-            return redirect(url_for("mfa"))
-        else:
-            return render_template("denied.html")
-
-    return render_template("dashboard.html", username=username, role=user_role, access_levels=access_levels, decision=decision, risk_score=risk_score)
-
-@app.route("/mfa", methods=["GET", "POST"])
-def mfa():
-    if "username" not in session:
-        return redirect(url_for("login"))
-
-    if request.method == "POST":
-        entered_otp = request.form.get("otp")
-        if entered_otp == session.get("otp"):
-            session.pop("otp", None)
-            return redirect(url_for("dashboard"))
-
-    session["otp"] = str(random.randint(100000, 999999))
-    print(f"Your OTP is: {session['otp']}")  # In real-world, send via SMS or Email
-
-    return render_template("mfa.html")
+@app.route("/log_file_access", methods=["POST"])
+def log_file():
+    data = request.get_json()
+    log_activity(data["username"], "File Access", data["file_name"])
+    return jsonify({"message": "File access logged successfully"})
 
 @app.route("/logout")
 def logout():

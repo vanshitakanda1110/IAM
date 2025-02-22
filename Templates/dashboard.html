@@ -1,6 +1,21 @@
-<h1>Welcome, {{ username }} ({{ role }})</h1>
-<ul>
-    {% for level in access_levels %}
-        <li>Access to Level {{ level }} Files</li>
-    {% endfor %}
-</ul>
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Dashboard</title>
+</head>
+<body>
+    <h1>Welcome, {{ username }}!</h1>
+    <h2>Role: {{ role }}</h2>
+
+    <h3>Allowed Files:</h3>
+    <ul>
+        {% for category in allowed_files %}
+            {% for file in category %}
+                <li>{{ file }}</li>
+            {% endfor %}
+        {% endfor %}
+    </ul>
+
+    <a href="{{ url_for('logout') }}">Logout</a>
+</body>
+</html>
