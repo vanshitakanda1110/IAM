@@ -1,44 +1,156 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <title>Dashboard - Catalyst Banking</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Catalyst Banking - Dashboard</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
     <style>
-        body { font-family: Arial, sans-serif; background-color: #eef2f3; text-align: center; }
-        .container { width: 60%; margin: auto; background: white; padding: 20px; border-radius: 10px; box-shadow: 0px 4px 10px rgba(0, 0, 0, 0.1); }
-        h1 { color: #007bff; }
-        ul { list-style-type: none; padding: 0; }
-        li { background: #f9f9f9; margin: 10px; padding: 10px; border-radius: 5px; transition: 0.3s; }
-        li:hover { background: #ddd; }
-        a { text-decoration: none; color: #007bff; font-weight: bold; }
-        a:hover { color: #0056b3; }
+        body {
+            background: linear-gradient(to right, #0f2027, #203a43, #2c5364);
+            color: white;
+            font-family: 'Arial', sans-serif;
+            margin: 0;
+            padding: 0;
+        }
+        header {
+            background-color: rgba(15, 32, 39, 0.95);
+            padding: 20px;
+            text-align: center;
+            font-size: 2rem;
+            font-weight: bold;
+            color: #f4f4f4;
+        }
+        .container {
+            margin-top: 30px;
+        }
+        .dashboard-header {
+            background: rgba(255, 255, 255, 0.1);
+            padding: 20px;
+            border-radius: 10px;
+            text-align: center;
+            margin-bottom: 30px;
+            box-shadow: 0px 4px 10px rgba(0, 0, 0, 0.3);
+        }
+        .card {
+            background: rgba(255, 255, 255, 0.1);
+            border: none;
+            border-radius: 15px;
+            padding: 20px;
+            margin-bottom: 30px;
+            box-shadow: 0px 4px 10px rgba(0, 0, 0, 0.3);
+        }
+        .file-links a {
+            display: block;
+            padding: 12px 15px;
+            margin: 8px 0;
+            background-color: rgba(23, 162, 184, 0.8);
+            color: #f4f4f4;
+            text-decoration: none;
+            font-size: 1.1rem;
+            border-radius: 5px;
+            transition: background 0.3s ease;
+        }
+        .file-links a:hover {
+            background-color: rgba(23, 162, 184, 1);
+        }
+        .log-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+        }
+        .log-table th, .log-table td {
+            border: 1px solid white;
+            padding: 10px;
+            text-align: center;
+        }
+        .log-table th {
+            background-color: rgba(255, 255, 255, 0.2);
+        }
     </style>
 </head>
 <body>
-    <h1>Welcome, {{ username }}</h1>
-    <h2>Role: {{ role }}</h2>
-
+    <header>Catalyst Banking</header>
+  
     <div class="container">
-        <h3>Your Accessible Files:</h3>
-        <ul>
-            {% for category in allowed_files %}
-                {% for file in category %}
-                    <li>
-                        <a href="#" onclick="logFileAccess('{{ username }}', '{{ file }}')">{{ file }}</a>
-                    </li>
-                {% endfor %}
-            {% endfor %}
-        </ul>
+        <!-- Dashboard Header with Employee Info -->
+        <div class="dashboard-header">
+            <h2>Welcome back, {{ username }}!</h2>
+            <p>
+                <strong>Role:</strong> {{ role }} |
+                <strong>Location:</strong> {{ location }} |
+                <strong>Working Hours:</strong> {{ working_hours }}
+            </p>
+        </div>
+
+        <div class="row">
+            <!-- File Access Section -->
+            <div class="col-md-6">
+                <div class="card">
+                    <h4 class="mb-3">Your Accessible Files</h4>
+                    <div class="file-links">
+                        {% for file in files %}
+                            <a href="{{ file.url }}" target="_blank">{{ file.name }}</a>
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
+
+            <!-- Show Real-Time Logs Only for CEO -->
+            {% if role == "CEO" %}
+            <div class="col-md-6">
+                <div class="card">
+                    <h4 class="mb-3">Real-Time Activity Logs</h4>
+                    <table class="log-table">
+                        <thead>
+                            <tr>
+                                <th>Timestamp</th>
+                                <th>User</th>
+                                <th>Action</th>
+                                <th>Risk Score</th>
+                                <th>Result</th>
+                            </tr>
+                        </thead>
+                        <tbody id="logTableBody">
+                            <tr><td colspan="5">Loading logs...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            {% endif %}
+        </div>
     </div>
-    <a href="{{ url_for('logout') }}">Logout</a>
 
     <script>
-    function logFileAccess(username, file) {
-        fetch('/log_file_access', {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({username: username, file_name: file})
-        });
-    }
+        {% if role == "CEO" %}
+        function fetchLogs() {
+            $.getJSON("/logs", function(data) {
+                let logTable = $("#logTableBody");
+                logTable.empty();
+                if (data.length === 0) {
+                    logTable.append("<tr><td colspan='5'>No logs available</td></tr>");
+                } else {
+                    data.forEach(log => {
+                        logTable.append(`
+                            <tr>
+                                <td>${log.timestamp}</td>
+                                <td>${log.username}</td>
+                                <td>${log.action}</td>
+                                <td>${log.risk_score}</td>
+                                <td>${log.access_result}</td>
+                            </tr>
+                        `);
+                    });
+                }
+            });
+        }
+        setInterval(fetchLogs, 3000);
+        fetchLogs();
+        {% endif %}
     </script>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 </body>
 </html>

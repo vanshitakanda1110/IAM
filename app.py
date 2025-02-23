@@ -11,101 +11,62 @@ from employees_db import employees, file_access
 app = Flask(__name__, template_folder="templates")
 app.secret_key = "your_secret_key"
 
-# Paths
 LOG_FILE_PATH = "IAM_logs/logs.csv"
 DB_PATH = "iam_database.db"
 
-# Load AI Models
 rf_model = joblib.load("models/rf_model.pkl")
 device_encoder = joblib.load("models/device_encoder.pkl")
 decision_encoder = joblib.load("models/decision_encoder.pkl")
 
-# Ensure Logs Directory Exists
 os.makedirs("IAM_logs", exist_ok=True)
 
-# Initialize Database
-def init_db():
+def get_db_connection():
     conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    
-    # Create users table if not exists
-    cursor.execute("""
-    CREATE TABLE IF NOT EXISTS users (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        username TEXT UNIQUE NOT NULL,
-        password TEXT NOT NULL
-    )""")
-    
-    # Create logs table if not exists
-    cursor.execute("""
-    CREATE TABLE IF NOT EXISTS logs (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        timestamp TEXT NOT NULL,
-        username TEXT NOT NULL,
-        action TEXT NOT NULL,
-        risk_score REAL NOT NULL,
-        access_result TEXT NOT NULL
-    )""")
-    
-    conn.commit()
-    conn.close()
+    conn.row_factory = sqlite3.Row
+    return conn
 
-# Function to log activities (Both CSV & SQLite)
-def log_activity(username, action, risk_score, access_result):
+def log_activity(username, action, risk_score=0, access_result="N/A"):
+    """Logs user activity into SQLite and CSV."""
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-    # Log to SQLite
-    conn = sqlite3.connect(DB_PATH)
+    # Store in SQLite
+    conn = get_db_connection()
     cursor = conn.cursor()
     cursor.execute(
         "INSERT INTO logs (timestamp, username, action, risk_score, access_result) VALUES (?, ?, ?, ?, ?)",
-        (timestamp, username, action, risk_score, access_result),
+        (timestamp, username, action, risk_score, access_result)
     )
     conn.commit()
     conn.close()
 
-    # Log to CSV
-    if not os.path.exists(LOG_FILE_PATH):
-        with open(LOG_FILE_PATH, "w", newline="") as f:
-            writer = csv.writer(f)
-            writer.writerow(["Timestamp", "Username", "Action", "Risk Score", "Access Result"])
-    
+    # Store in CSV logs
+    log_exists = os.path.exists(LOG_FILE_PATH)
     with open(LOG_FILE_PATH, "a", newline="") as f:
         writer = csv.writer(f)
+        if not log_exists:
+            writer.writerow(["Timestamp", "Username", "Action", "Risk Score", "Access Result"])
         writer.writerow([timestamp, username, action, risk_score, access_result])
 
-    push_logs_to_github()
+    print(f"Activity logged: {username} - {action} - Risk Score: {risk_score} - Access: {access_result}")
 
-# Function to Push Logs to GitHub
-def push_logs_to_github():
-    """Push the updated logs to the GitHub repository."""
-    try:
-        subprocess.run(["git", "add", LOG_FILE_PATH], check=True)
-        subprocess.run(["git", "commit", "-m", "Updated logs"], check=True)
-        subprocess.run(["git", "push", "origin", "main"], check=True)
-    except Exception as e:
-        print("Git push failed:", str(e))
-
-# AI Risk Calculation Function
-def calculate_risk(username, new_device, new_location):
-    last_behavior = employees.get(username, {"device": "Laptop", "location": "New York"})
-    risk_score = 0.1  # Base risk
-
-    if new_device != last_behavior.get("device", "Laptop"):
-        risk_score += 0.4
-    if new_location != last_behavior.get("location", "New York"):
-        risk_score += 0.3
-
-    return min(1, risk_score)
+def get_recent_activities(username):
+    """Fetch recent activities of a user from the logs."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT timestamp, action FROM logs WHERE username = ? ORDER BY timestamp DESC LIMIT 5", (username,))
+    logs = cursor.fetchall()
+    conn.close()
+    return [f"{log['timestamp']} - {log['action']}" for log in logs]
 
 @app.route("/", methods=["GET", "POST"])
 def login():
+    """Handles user login, assigns risk scores, and determines access."""
     error = None
     if request.method == "POST":
         username = request.form["username"]
         password = request.form["password"]
 
-        conn = sqlite3.connect(DB_PATH)
+        conn = get_db_connection()
         cursor = conn.cursor()
         cursor.execute("SELECT * FROM users WHERE username = ? AND password = ?", (username, password))
         user = cursor.fetchone()
@@ -131,20 +92,34 @@ def login():
 
 @app.route("/dashboard")
 def dashboard():
+    """Loads the user-specific dashboard with logs and file access details."""
     if "username" not in session:
         return redirect(url_for("login"))
 
     username = session["username"]
-    user_role = employees.get(username, {}).get("role", "User")
-    access_levels = employees.get(username, {}).get("access_level", [])
+    user_data = employees.get(username, {})
+    role = user_data.get("role", "User")
+    location = user_data.get("location", "Unknown")
+    working_hours = user_data.get("working_hours", "Not specified")
+    files = user_data.get("files", [])
 
-    # Ensure file_access keys exist
-    allowed_files = [file_access.get(level, []) for level in access_levels]
+    last_login = get_recent_activities(username)[0] if get_recent_activities(username) else "First Login"
+    activities = get_recent_activities(username)
 
-    return render_template("dashboard.html", username=username, role=user_role, allowed_files=allowed_files)
+    return render_template(
+        "dashboard.html",
+        username=username,
+        role=role,
+        location=location,
+        working_hours=working_hours,
+        files=files,
+        last_login=last_login,
+        activities=activities
+    )
 
 @app.route("/access_file/<filename>")
 def access_file(filename):
+    """Logs file access and allows users to open their assigned files."""
     if "username" in session:
         username = session["username"]
         log_activity(username, f"Accessed {filename}", 0, "Allowed")
@@ -154,15 +129,29 @@ def access_file(filename):
 
 @app.route("/log_file_access", methods=["POST"])
 def log_file():
+    """API to log file access events."""
     data = request.get_json()
     log_activity(data["username"], "File Access", 0, "Allowed")
     return jsonify({"message": "File access logged successfully"})
 
+@app.route("/logs")
+def get_logs():
+    """Fetches recent logs as JSON for real-time monitoring."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT timestamp, username, action, risk_score, access_result FROM logs ORDER BY timestamp DESC LIMIT 10")
+    logs = cursor.fetchall()
+    conn.close()
+
+    logs_list = [{"timestamp": row["timestamp"], "username": row["username"], "action": row["action"], "risk_score": row["risk_score"], "access_result": row["access_result"]} for row in logs]
+
+    return jsonify(logs_list)
+
 @app.route("/logout")
 def logout():
+    """Logs the user out."""
     session.pop("username", None)
     return redirect(url_for("login"))
 
 if __name__ == "__main__":
-    init_db()  # Initialize database tables if not exist
     app.run(host="0.0.0.0", port=5000, debug=True)
